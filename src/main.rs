@@ -1,6 +1,4 @@
-use std::{
-    io::{Read, Write},
-};
+use std::io::{Read, Write};
 
 #[derive(PartialEq, Clone, Copy)]
 enum Operation {
@@ -17,7 +15,12 @@ enum Operation {
     Do { address: usize },
     End { address: usize },
     Dup,
+    Mem,
+    Store,
+    Load,
 }
+
+const MEM_BUFFER_SIZE: usize = 640_000;
 
 struct Program {
     operations: Vec<Operation>,
@@ -42,7 +45,9 @@ impl Program {
         let _ = file.read_to_string(code);
 
         for line in code.lines() {
-            let mut tokens = line.trim().split_whitespace().enumerate();
+            let line = line.trim();
+            let no_comments = line.split("//").next().unwrap();
+            let mut tokens = no_comments.split_whitespace().enumerate();
             while let Some((_, token)) = tokens.next() {
                 operations.push(match token {
                     "+" => Operation::Plus,
@@ -50,13 +55,16 @@ impl Program {
                     "=" => Operation::Equals,
                     ">" => Operation::Greater,
                     "<" => Operation::Lower,
-                    "." => Operation::Dump,
+                    "dump" => Operation::Dump,
                     "if" => Operation::If { address: 0 },
                     "else" => Operation::Else { address: 0 },
                     "while" => Operation::While,
                     "do" => Operation::Do { address: 0 },
                     "end" => Operation::End { address: 0 },
                     "dup" => Operation::Dup,
+                    "mem" => Operation::Mem,
+                    "." => Operation::Store,
+                    "," => Operation::Load,
                     _ => Operation::Push(
                         token
                             .parse::<i32>()
@@ -192,6 +200,15 @@ impl Program {
                         stack.push(stack[stack.len() - 1]);
                     }
                 }
+                Operation::Mem => {
+                    unimplemented!()
+                }
+                Operation::Store => {
+                    unimplemented!()
+                }
+                Operation::Load => {
+                    unimplemented!()
+                }
             }
         }
     }
@@ -246,9 +263,10 @@ impl Program {
         for i in 0..self.operations.len() {
             let op = self.operations.get(i).unwrap();
             let operation = match op {
-                Operation::Push(number) => format!("\tpush {}\n", number),
+                Operation::Push(number) => format!(";; -- {} --\n\tpush {}\n", number, number),
                 Operation::Plus => {
                     "".to_owned()
+                        + ";; -- + --\n"
                         + "\tpop rax\n"
                         + "\tpop rbx\n"
                         + "\tadd rax, rbx\n"
@@ -256,6 +274,7 @@ impl Program {
                 }
                 Operation::Minus => {
                     "".to_owned()
+                        + ";; -- - --\n"
                         + "\tpop rbx\n"
                         + "\tpop rax\n"
                         + "\tsub rax, rbx\n"
@@ -263,6 +282,7 @@ impl Program {
                 }
                 Operation::Equals => {
                     "".to_owned()
+                        + ";; -- = --\n"
                         + "\tpop rax\n"
                         + "\tpop rbx\n"
                         + "\tcmp rax, rbx\n"
@@ -272,6 +292,7 @@ impl Program {
                 }
                 Operation::Greater => {
                     "".to_owned()
+                        + ";; -- > --\n"
                         + "\tpop rbx\n"
                         + "\tpop rax\n"
                         + "\tcmp rax, rbx\n"
@@ -281,6 +302,7 @@ impl Program {
                 }
                 Operation::Lower => {
                     "".to_owned()
+                        + ";; -- < --\n"
                         + "\tpop rbx\n"
                         + "\tpop rax\n"
                         + "\tcmp rax, rbx\n"
@@ -320,11 +342,29 @@ impl Program {
                     }
                 }
                 Operation::Dup => "".to_owned() + "\tpop rax\n" + "\tpush rax\n" + "\tpush rax\n",
+                Operation::Mem => "".to_owned() + ";; -- MEM --\n" + "\tpush mem\n",
+                Operation::Store => {
+                    "".to_owned()
+                        + ";; -- STORE --\n"
+                        + "\tpop rbx\n"
+                        + "\tpop rax\n"
+                        + "\tmov [rax], bl\n"
+                }
+                Operation::Load => {
+                    "".to_owned()
+                        + ";; -- LOAD --\n"
+                        + "\tpop rax\n"
+                        + "\txor rbx, rbx\n"
+                        + "\tmov bl, [rax]\n"
+                        + "\tpush rbx\n"
+                }
             };
             code.push_str(&operation);
         }
 
-        code.push_str("\tmov rax, 60\n\tmov rdi, 0\n\tsyscall");
+        code.push_str("\tmov rax, 60\n\tmov rdi, 0\n\tsyscall\n\n");
+        // TODO: remove hardcoded buffer size
+        code.push_str(&format!("section .bss\nmem resb {}\n", MEM_BUFFER_SIZE));
 
         let mut file = std::fs::File::create("./out.asm").expect("Failed to create .asm file");
         file.write_all(code.as_bytes())

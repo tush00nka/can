@@ -1,9 +1,9 @@
 34 35 + 69 = if
     400 20 + 1000 = if 
-        420 .
+        420 dump
     else 
-        0 .
+        0 dump
     end
 else
-    69 .
+    69 dump
 end

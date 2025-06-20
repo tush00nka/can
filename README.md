@@ -11,18 +11,6 @@ It is currently on the earliest stages of its development and basically copies t
 - while loops
 
 # Basic program
-```
-34 35 + 69 = if
-    400 20 + 1000 = if 
-        420 .
-    else 
-        0 .
-    end
-else
-    69 .
-end
-```
-
 While loop that prints numbers 10 to 1
 ```
 10
@@ -31,6 +19,23 @@ while
     dup .
     1 -
     dup 0 >
+end
+```
+
+# Fibonacci sequence
+```
+mem 0 + 10 . // counter
+mem 1 + 0 . // first
+mem 2 + 1 . // second
+mem 3 + 0 . // temp
+
+// breaks after number 255 because we're using bytes :)
+while mem dup , dup 0 > do
+    1 - .
+    mem 3 + mem 1 + , mem 2 + , + . // sum two numbers and put result in temp value
+    mem 1 + mem 2 + , . // put second number in place of first
+    mem 2 + mem 3 + , . // put temp value in place of second
+    mem 3 + , dump // print
 end
 ```
 
