@@ -1,7 +1,5 @@
 10
-dup 0 > 
-while 
+while dup 0 > do 
     dup .
     1 -
-    dup 0 >
 end

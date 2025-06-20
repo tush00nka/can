@@ -1,4 +1,6 @@
-use std::io::{Read, Write};
+use std::{
+    io::{Read, Write},
+};
 
 #[derive(PartialEq, Clone, Copy)]
 enum Operation {
@@ -11,7 +13,8 @@ enum Operation {
     Dump,
     If { address: usize },
     Else { address: usize },
-    While { address: usize },
+    While,
+    Do { address: usize },
     End { address: usize },
     Dup,
 }
@@ -50,7 +53,8 @@ impl Program {
                     "." => Operation::Dump,
                     "if" => Operation::If { address: 0 },
                     "else" => Operation::Else { address: 0 },
-                    "while" => Operation::While { address: 0 },
+                    "while" => Operation::While,
+                    "do" => Operation::Do { address: 0 },
                     "end" => Operation::End { address: 0 },
                     "dup" => Operation::Dup,
                     _ => Operation::Push(
@@ -88,16 +92,18 @@ impl Program {
                     }
                     stack.push(i);
                 }
-                Operation::While { .. } => {
+                Operation::While => {
+                    stack.push(i);
+                }
+                Operation::Do { .. } => {
                     stack.push(i);
                 }
                 Operation::End { address } => {
-                    let end_address = address;
                     // TODO: check for end of stack and throw error if extra `end`
                     let op_id = stack.pop().unwrap();
                     let cross_op = test_ops[op_id];
-                    if cross_op == (Operation::While { address: 0 }) {
-                        *end_address = op_id;
+                    if cross_op == (Operation::Do { address: 0 }) {
+                        *address = stack.pop().unwrap();
                     }
                     match self.operations.get_mut(op_id).unwrap() {
                         Operation::If { address } => {
@@ -106,7 +112,7 @@ impl Program {
                         Operation::Else { address } => {
                             *address = i;
                         }
-                        Operation::While { address } => {
+                        Operation::Do { address } => {
                             *address = i;
                         }
                         _ => {}
@@ -168,7 +174,8 @@ impl Program {
                 Operation::Else { address } => {
                     pointer = *address + 1;
                 }
-                Operation::While { address } => {
+                Operation::While => {}
+                Operation::Do { address } => {
                     if stack.pop().unwrap() == 0 {
                         // TODO: check for address bounds
                         pointer = *address + 1;
@@ -240,31 +247,70 @@ impl Program {
             let op = self.operations.get(i).unwrap();
             let operation = match op {
                 Operation::Push(number) => format!("\tpush {}\n", number),
-                Operation::Plus => "\tpop rax\n\tpop rbx\n\tadd rax, rbx\n\tpush rax\n".to_string(),
+                Operation::Plus => {
+                    "".to_owned()
+                        + "\tpop rax\n"
+                        + "\tpop rbx\n"
+                        + "\tadd rax, rbx\n"
+                        + "\tpush rax\n"
+                }
                 Operation::Minus => {
-                    "\tpop rbx\n\tpop rax\n\tsub rax, rbx\n\tpush rax\n".to_string()
+                    "".to_owned()
+                        + "\tpop rbx\n"
+                        + "\tpop rax\n"
+                        + "\tsub rax, rbx\n"
+                        + "\tpush rax\n"
                 }
                 Operation::Equals => {
-                    "\tpop rax\n\tpop rbx\n\tcmp rax, rbx\n\tsete al\n\tmovzx rax, al\n\tpush rax\n"
-                        .to_string()
+                    "".to_owned()
+                        + "\tpop rax\n"
+                        + "\tpop rbx\n"
+                        + "\tcmp rax, rbx\n"
+                        + "\tsete al\n"
+                        + "\tmovzx rax, al\n"
+                        + "\tpush rax\n"
                 }
                 Operation::Greater => {
-                    "\tpop rbx\n\tpop rax\n\tcmp rax, rbx\n\tsetg al\n\tmovzx rax, al\n\tpush rax\n"
-                        .to_string()
+                    "".to_owned()
+                        + "\tpop rbx\n"
+                        + "\tpop rax\n"
+                        + "\tcmp rax, rbx\n"
+                        + "\tsetg al\n"
+                        + "\tmovzx rax, al\n"
+                        + "\tpush rax\n"
                 }
                 Operation::Lower => {
-                    "\tpop rbx\n\tpop rax\n\tcmp rax, rbx\n\tsetl al\n\tmovzx rax, al\n\tpush rax\n"
-                        .to_string()
+                    "".to_owned()
+                        + "\tpop rbx\n"
+                        + "\tpop rax\n"
+                        + "\tcmp rax, rbx\n"
+                        + "\tsetl al\n"
+                        + "\tmovzx rax, al\n"
+                        + "\tpush rax\n"
                 }
-                Operation::Dump => "\tpop rdi\n\tcall dump\n".to_string(),
+                Operation::Dump => "".to_owned() + "\tpop rdi\n" + "\tcall dump\n",
                 Operation::If { address } => {
-                    format!(";; -- IF -- \n\tpop rax\n\ttest rax, rax\n\tjz label_{address}\n")
+                    "".to_owned()
+                        + ";; -- IF -- \n"
+                        + "\tpop rax\n"
+                        + "\ttest rax, rax\n"
+                        + &format!("\tjz label_{address}\n")
                 }
                 Operation::Else { address } => {
-                    format!(";; -- ELSE -- \n\tjmp label_{address}\nlabel_{i}:\n")
+                    "".to_owned()
+                        + ";; -- ELSE -- \n"
+                        + &format!("\tjmp label_{address}\n")
+                        + &format!("label_{i}:\n")
                 }
-                Operation::While { address } => {
-                    format!(";; -- WHILE -- \nlabel_{i}:\n\tpop rax\n\ttest rax, rax\n\tjz label_{address}\n")
+                Operation::While => {
+                    format!(";; -- WHILE -- \nlabel_{i}:\n")
+                }
+                Operation::Do { address } => {
+                    "".to_owned()
+                        + ";; -- DO -- \n"
+                        + "\tpop rax\n"
+                        + "\ttest rax, rax\n"
+                        + &format!("\tjz label_{address}\n")
                 }
                 Operation::End { address } => {
                     if *address > 0 {
@@ -273,7 +319,7 @@ impl Program {
                         format!(";; -- END IF -- \n\tlabel_{i}:\n")
                     }
                 }
-                Operation::Dup => "\tpop rax\n\tpush rax\n\tpush rax\n".to_string(),
+                Operation::Dup => "".to_owned() + "\tpop rax\n" + "\tpush rax\n" + "\tpush rax\n",
             };
             code.push_str(&operation);
         }
