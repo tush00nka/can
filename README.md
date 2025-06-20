@@ -8,6 +8,7 @@ It is currently on the earliest stages of its development and basically copies t
 - equality check
 - dump (print number from the top of the stack)
 - nestable if-else statements 
+- while loops
 
 # Basic program
 ```
@@ -19,6 +20,17 @@ It is currently on the earliest stages of its development and basically copies t
     end
 else
     69 .
+end
+```
+
+While loop that prints numbers 10 to 1
+```
+10
+dup 0 > 
+while 
+    dup .
+    1 -
+    dup 0 >
 end
 ```
 

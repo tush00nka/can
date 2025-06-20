@@ -1,7 +1,7 @@
 10
 dup 0 > 
 while 
-dup .
-dup 1 -
-dup 0 >
+    dup .
+    1 -
+    dup 0 >
 end
