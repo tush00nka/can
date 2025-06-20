@@ -1,14 +1,19 @@
 use std::io::{Read, Write};
 
+#[derive(PartialEq, Clone, Copy)]
 enum Operation {
     Push(i32),
     Plus,
     Minus,
     Equals,
+    Greater,
+    Lower,
     Dump,
     If { address: usize },
     Else { address: usize },
-    End,
+    While { address: usize },
+    End { address: usize },
+    Dup,
 }
 
 struct Program {
@@ -40,10 +45,14 @@ impl Program {
                     "+" => Operation::Plus,
                     "-" => Operation::Minus,
                     "=" => Operation::Equals,
+                    ">" => Operation::Greater,
+                    "<" => Operation::Lower,
                     "." => Operation::Dump,
                     "if" => Operation::If { address: 0 },
                     "else" => Operation::Else { address: 0 },
-                    "end" => Operation::End,
+                    "while" => Operation::While { address: 0 },
+                    "end" => Operation::End { address: 0 },
+                    "dup" => Operation::Dup,
                     _ => Operation::Push(
                         token
                             .parse::<i32>()
@@ -61,8 +70,9 @@ impl Program {
 
     fn cross_reference(&mut self) {
         let mut stack = vec![];
+        let test_ops = self.operations.clone();
         for i in 0..self.operations.len() {
-            let op = self.operations.get(i).unwrap();
+            let op = self.operations.get_mut(i).unwrap();
             match op {
                 Operation::If { .. } => {
                     stack.push(i);
@@ -78,14 +88,25 @@ impl Program {
                     }
                     stack.push(i);
                 }
-                Operation::End => {
+                Operation::While { .. } => {
+                    stack.push(i);
+                }
+                Operation::End { address } => {
+                    let end_address = address;
                     // TODO: check for end of stack and throw error if extra `end`
                     let op_id = stack.pop().unwrap();
+                    let cross_op = test_ops[op_id];
+                    if cross_op == (Operation::While { address: 0 }) {
+                        *end_address = op_id;
+                    }
                     match self.operations.get_mut(op_id).unwrap() {
                         Operation::If { address } => {
                             *address = i;
                         }
                         Operation::Else { address } => {
+                            *address = i;
+                        }
+                        Operation::While { address } => {
                             *address = i;
                         }
                         _ => {}
@@ -114,14 +135,24 @@ impl Program {
                     stack.push(a + b);
                 }
                 Operation::Minus => {
-                    let a = stack.pop().unwrap();
                     let b = stack.pop().unwrap();
-                    stack.push(b - a);
+                    let a = stack.pop().unwrap();
+                    stack.push(a - b);
                 }
                 Operation::Equals => {
                     let a = stack.pop().unwrap();
                     let b = stack.pop().unwrap();
                     stack.push((a == b) as i32);
+                }
+                Operation::Greater => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push((a > b) as i32);
+                }
+                Operation::Lower => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push((a < b) as i32);
                 }
                 Operation::Dump => {
                     println!("{}", stack.pop().unwrap());
@@ -131,13 +162,29 @@ impl Program {
                     // so 1, 2, 69, -420 etc all count as 1
                     if stack.pop().unwrap() == 0 {
                         // TODO: check for address bounds
-                        pointer = *address+1;
+                        pointer = *address + 1;
                     }
                 }
                 Operation::Else { address } => {
-                    pointer = *address;
+                    pointer = *address + 1;
                 }
-                Operation::End => {}
+                Operation::While { address } => {
+                    if stack.pop().unwrap() == 0 {
+                        // TODO: check for address bounds
+                        pointer = *address + 1;
+                    }
+                }
+                Operation::End { address } => {
+                    if *address > 0 {
+                        pointer = *address;
+                    }
+                }
+                Operation::Dup => {
+                    // if stack has something ontop, push it's copy onto the stack
+                    if stack.len() > 0 {
+                        stack.push(stack[stack.len() - 1]);
+                    }
+                }
             }
         }
     }
@@ -201,14 +248,32 @@ impl Program {
                     "\tpop rax\n\tpop rbx\n\tcmp rax, rbx\n\tsete al\n\tmovzx rax, al\n\tpush rax\n"
                         .to_string()
                 }
+                Operation::Greater => {
+                    "\tpop rbx\n\tpop rax\n\tcmp rax, rbx\n\tsetg al\n\tmovzx rax, al\n\tpush rax\n"
+                        .to_string()
+                }
+                Operation::Lower => {
+                    "\tpop rbx\n\tpop rax\n\tcmp rax, rbx\n\tsetl al\n\tmovzx rax, al\n\tpush rax\n"
+                        .to_string()
+                }
                 Operation::Dump => "\tpop rdi\n\tcall dump\n".to_string(),
                 Operation::If { address } => {
-                    format!("\tpop rax\n\ttest rax, rax\n\tjz label_{address}\n")
+                    format!(";; -- IF -- \n\tpop rax\n\ttest rax, rax\n\tjz label_{address}\n")
                 }
                 Operation::Else { address } => {
-                    format!("\tjmp label_{address}\nlabel_{i}:\n")
+                    format!(";; -- ELSE -- \n\tjmp label_{address}\nlabel_{i}:\n")
                 }
-                Operation::End => format!("label_{i}:\n"),
+                Operation::While { address } => {
+                    format!(";; -- WHILE -- \nlabel_{i}:\n\tpop rax\n\ttest rax, rax\n\tjz label_{address}\n")
+                }
+                Operation::End { address } => {
+                    if *address > 0 {
+                        format!(";; -- END WHILE -- \n\tjmp label_{address}\nlabel_{i}:\n")
+                    } else {
+                        format!(";; -- END IF -- \n\tlabel_{i}:\n")
+                    }
+                }
+                Operation::Dup => "\tpop rax\n\tpush rax\n\tpush rax\n".to_string(),
             };
             code.push_str(&operation);
         }
