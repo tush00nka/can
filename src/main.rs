@@ -18,6 +18,8 @@ enum Operation {
     Mem,
     Store,
     Load,
+    Drop,
+    Syscall { arg_count: usize },
 }
 
 const MEM_BUFFER_SIZE: usize = 640_000;
@@ -49,7 +51,7 @@ impl Program {
             let no_comments = line.split("//").next().unwrap();
             let mut tokens = no_comments.split_whitespace().enumerate();
             while let Some((_, token)) = tokens.next() {
-                operations.push(match token {
+                let op = match token {
                     "+" => Operation::Plus,
                     "-" => Operation::Minus,
                     "=" => Operation::Equals,
@@ -65,12 +67,28 @@ impl Program {
                     "mem" => Operation::Mem,
                     "." => Operation::Store,
                     "," => Operation::Load,
-                    _ => Operation::Push(
-                        token
-                            .parse::<i32>()
-                            .expect(&format!("Unexpected operand '{token}'")),
-                    ),
-                });
+                    "drop" => Operation::Drop,
+                    "syscall" => Operation::Syscall { arg_count: 0 },
+                    _ => {
+                        if *operations.last().unwrap() == (Operation::Syscall { arg_count: 0 }) {
+                            operations.pop(); // rewrite the syscall operation
+                            Operation::Syscall {
+                                arg_count: token
+                                    .parse::<i32>()
+                                    .expect(&format!("Syscall arg count not specified! `{token}`"))
+                                    as usize,
+                            }
+                        } else {
+                            Operation::Push(
+                                token
+                                    .parse::<i32>()
+                                    .expect(&format!("Unexpected operand '{token}'")),
+                            )
+                        }
+                    }
+                };
+
+                operations.push(op);
             }
         }
 
@@ -200,6 +218,9 @@ impl Program {
                         stack.push(stack[stack.len() - 1]);
                     }
                 }
+                Operation::Drop => {
+                    stack.pop();
+                }
                 Operation::Mem => {
                     unimplemented!()
                 }
@@ -207,6 +228,9 @@ impl Program {
                     unimplemented!()
                 }
                 Operation::Load => {
+                    unimplemented!()
+                }
+                Operation::Syscall { .. } => {
                     unimplemented!()
                 }
             }
@@ -342,6 +366,7 @@ impl Program {
                     }
                 }
                 Operation::Dup => "".to_owned() + "\tpop rax\n" + "\tpush rax\n" + "\tpush rax\n",
+                Operation::Drop => "".to_owned() + "\tpop rax\n" + "\txor rax, rax\n",
                 Operation::Mem => "".to_owned() + ";; -- MEM --\n" + "\tpush mem\n",
                 Operation::Store => {
                     "".to_owned()
@@ -357,6 +382,19 @@ impl Program {
                         + "\txor rbx, rbx\n"
                         + "\tmov bl, [rax]\n"
                         + "\tpush rbx\n"
+                }
+                Operation::Syscall { arg_count } => {
+                    let mut syscall_code = "".to_owned() + ";; -- SYSCALL 3 --\n" + "\tpop rax\n"; // syscall number
+
+                    let arg_registers = ["rdi", "rsi", "rdx", "r10", "r8", "r9"];
+
+                    for i in 0..*arg_count {
+                        syscall_code += &format!("\tpop {}\n", arg_registers[i]);
+                    }
+
+                    syscall_code += "\tsyscall\n";
+
+                    syscall_code
                 }
             };
             code.push_str(&operation);
