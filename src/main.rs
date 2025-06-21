@@ -8,13 +8,19 @@ enum Operation {
     Equals,
     Greater,
     Lower,
+    BitOr,
+    BitAnd,
+    BitShiftLeft,
+    BitShiftRight,
     Dump,
     If { address: usize },
     Else { address: usize },
     While,
     Do { address: usize },
     End { address: usize },
-    Dup,
+    Dup { depth: usize },
+    Swap,
+    Over,
     Mem,
     Store,
     Load,
@@ -57,35 +63,31 @@ impl Program {
                     "=" => Operation::Equals,
                     ">" => Operation::Greater,
                     "<" => Operation::Lower,
+                    "&" => Operation::BitAnd,
+                    "|" => Operation::BitOr,
+                    "<<" => Operation::BitShiftLeft,
+                    ">>" => Operation::BitShiftRight,
                     "dump" => Operation::Dump,
                     "if" => Operation::If { address: 0 },
                     "else" => Operation::Else { address: 0 },
                     "while" => Operation::While,
                     "do" => Operation::Do { address: 0 },
                     "end" => Operation::End { address: 0 },
-                    "dup" => Operation::Dup,
+                    "dup" => Operation::Dup { depth: 1 },
+                    "2dup" => Operation::Dup { depth: 2 },
+                    "swap" => Operation::Swap,
+                    "over" => Operation::Over,
                     "mem" => Operation::Mem,
                     "." => Operation::Store,
                     "," => Operation::Load,
                     "drop" => Operation::Drop,
-                    "syscall" => Operation::Syscall { arg_count: 0 },
-                    _ => {
-                        if *operations.last().unwrap() == (Operation::Syscall { arg_count: 0 }) {
-                            operations.pop(); // rewrite the syscall operation
-                            Operation::Syscall {
-                                arg_count: token
-                                    .parse::<i32>()
-                                    .expect(&format!("Syscall arg count not specified! `{token}`"))
-                                    as usize,
-                            }
-                        } else {
-                            Operation::Push(
-                                token
-                                    .parse::<i32>()
-                                    .expect(&format!("Unexpected operand '{token}'")),
-                            )
-                        }
-                    }
+                    "syscall1" => Operation::Syscall { arg_count: 1 },
+                    "syscall3" => Operation::Syscall { arg_count: 3 },
+                    _ => Operation::Push(
+                        token
+                            .parse::<i32>()
+                            .expect(&format!("Unexpected operand '{token}'")),
+                    ),
                 };
 
                 operations.push(op);
@@ -186,6 +188,26 @@ impl Program {
                     let a = stack.pop().unwrap();
                     stack.push((a < b) as i32);
                 }
+                Operation::BitAnd => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(a & b);
+                }
+                Operation::BitOr => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(a | b);
+                }
+                Operation::BitShiftLeft => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(a << b);
+                }
+                Operation::BitShiftRight => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(a >> b);
+                }
                 Operation::Dump => {
                     println!("{}", stack.pop().unwrap());
                 }
@@ -212,10 +234,36 @@ impl Program {
                         pointer = *address;
                     }
                 }
-                Operation::Dup => {
+                Operation::Dup { depth } => {
                     // if stack has something ontop, push it's copy onto the stack
-                    if stack.len() > 0 {
-                        stack.push(stack[stack.len() - 1]);
+                    if stack.len() >= *depth {
+                        if *depth == 1 {
+                            stack.push(stack[stack.len() - 1]);
+                        } else if *depth == 2 {
+                            let val1 = stack.pop().unwrap();
+                            let val2 = stack.pop().unwrap();
+                            stack.push(val2);
+                            stack.push(val1);
+                            stack.push(val2);
+                            stack.push(val1);
+                        }
+                    }
+                }
+                Operation::Swap => {
+                    if stack.len() > 1 {
+                        let last = stack.pop().unwrap();
+                        let prev = stack.pop().unwrap();
+                        stack.push(prev);
+                        stack.push(last);
+                    }
+                }
+                Operation::Over => {
+                    if stack.len() > 1 {
+                        let top = stack.pop().unwrap();
+                        let over = stack.pop().unwrap();
+                        stack.push(over);
+                        stack.push(top);
+                        stack.push(over);
                     }
                 }
                 Operation::Drop => {
@@ -311,7 +359,7 @@ impl Program {
                         + "\tpop rbx\n"
                         + "\tcmp rax, rbx\n"
                         + "\tsete al\n"
-                        + "\tmovzx rax, al\n"
+                        // + "\tmovzx rax, al\n"
                         + "\tpush rax\n"
                 }
                 Operation::Greater => {
@@ -321,7 +369,7 @@ impl Program {
                         + "\tpop rax\n"
                         + "\tcmp rax, rbx\n"
                         + "\tsetg al\n"
-                        + "\tmovzx rax, al\n"
+                        // + "\tmovzx rax, al\n"
                         + "\tpush rax\n"
                 }
                 Operation::Lower => {
@@ -331,7 +379,39 @@ impl Program {
                         + "\tpop rax\n"
                         + "\tcmp rax, rbx\n"
                         + "\tsetl al\n"
-                        + "\tmovzx rax, al\n"
+                        // + "\tmovzx rax, al\n"
+                        + "\tpush rax\n"
+                }
+                Operation::BitAnd => {
+                    "".to_owned()
+                        + ";; -- < --\n"
+                        + "\tpop rbx\n"
+                        + "\tpop rax\n"
+                        + "\nand rax, rbx\n"
+                        + "\tpush rax\n"
+                }
+                Operation::BitOr => {
+                    "".to_owned()
+                        + ";; -- < --\n"
+                        + "\tpop rbx\n"
+                        + "\tpop rax\n"
+                        + "\nor rax, rbx\n"
+                        + "\tpush rax\n"
+                }
+                Operation::BitShiftLeft => {
+                    "".to_owned()
+                        + ";; -- < --\n"
+                        + "\tpop rcx\n"
+                        + "\tpop rax\n"
+                        + "\nshl rax, cl\n"
+                        + "\tpush rax\n"
+                }
+                Operation::BitShiftRight => {
+                    "".to_owned()
+                        + ";; -- < --\n"
+                        + "\tpop rcx\n"
+                        + "\tpop rax\n"
+                        + "\nshr rax, cl\n"
                         + "\tpush rax\n"
                 }
                 Operation::Dump => "".to_owned() + "\tpop rdi\n" + "\tcall dump\n",
@@ -365,7 +445,32 @@ impl Program {
                         format!(";; -- END IF -- \n\tlabel_{i}:\n")
                     }
                 }
-                Operation::Dup => "".to_owned() + "\tpop rax\n" + "\tpush rax\n" + "\tpush rax\n",
+                Operation::Dup { depth } => {
+                    if *depth == 1 {
+                        "".to_owned() + "\tpop rax\n" + "\tpush rax\n" + "\tpush rax\n"
+                    } else if *depth == 2 {
+                        "".to_owned()
+                            + "\tpop rax\n"
+                            + "\tpop rbx\n"
+                            + "\tpush rbx\n"
+                            + "\tpush rax\n"
+                            + "\tpush rbx\n"
+                            + "\tpush rax\n"
+                    } else {
+                        "".to_owned()
+                    }
+                }
+                Operation::Swap => {
+                    "".to_owned() + "\tpop rax\n" + "\tpop rbx\n" + "\tpush rax\n" + "\tpush rbx\n"
+                }
+                Operation::Over => {
+                    "".to_owned()
+                        + "\tpop rax\n"
+                        + "\tpop rbx\n"
+                        + "\tpush rbx\n"
+                        + "\tpush rax\n"
+                        + "\tpush rbx\n"
+                }
                 Operation::Drop => "".to_owned() + "\tpop rax\n" + "\txor rax, rax\n",
                 Operation::Mem => "".to_owned() + ";; -- MEM --\n" + "\tpush mem\n",
                 Operation::Store => {

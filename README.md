@@ -3,37 +3,36 @@
 It is currently at the earliest stages of its development and basically copies the syntax of Tsoding's Porth. 
 
 # Features
-- addition
-- substraction
-- equality check
+- arithmetic operations
+- bitwise logic operations
 - dump (print number from the top of the stack)
-- nestable if-else statements 
+- if-else statements 
 - while loops
-- basic memory addressing
+- memory addressing
+- syscalls
 - C-style comments (//)
+- [Turing complete](./examples/rule110.can)
 
 # Basic program
-While loop that prints numbers 10 to 1
+While loop that prints numbers 1 to 10
 ```
-10
-dup 0 > 
-while 
-    dup .
-    1 -
-    dup 0 >
+10 0 while 2dup > do 
+    1 +
+    dup dump
 end
 ```
 
 # Fibonacci sequence
 ```
-mem 0 + 10 . // counter
+// prints first 10 numbers of Fibonacci sequence
+
 mem 1 + 0 . // first
 mem 2 + 1 . // second
 mem 3 + 0 . // temp
 
 // breaks after number 255 because we're using bytes :)
-while mem dup , dup 0 > do
-    1 - .
+10 0 while 2dup > do
+    1 +
     mem 3 + mem 1 + , mem 2 + , + . // sum two numbers and put result in temp value
     mem 1 + mem 2 + , . // put second number in place of first
     mem 2 + mem 3 + , . // put temp value in place of second
