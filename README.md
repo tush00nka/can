@@ -1,6 +1,6 @@
 # About
 `can` is a stack-based programming language written in rust.
-It is currently on the earliest stages of its development and basically copies the syntax of Tsoding's Porth. 
+It is currently at the earliest stages of its development and basically copies the syntax of Tsoding's Porth. 
 
 # Features
 - addition
@@ -9,6 +9,8 @@ It is currently on the earliest stages of its development and basically copies t
 - dump (print number from the top of the stack)
 - nestable if-else statements 
 - while loops
+- basic memory addressing
+- C-style comments (//)
 
 # Basic program
 While loop that prints numbers 10 to 1
