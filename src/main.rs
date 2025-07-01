@@ -1,8 +1,13 @@
-use std::io::{Read, Write};
+use core::{iter::Iterator, unimplemented};
+use std::{
+    fs::File,
+    io::{Read, Write},
+};
 
-#[derive(PartialEq, Clone, Copy)]
+#[derive(PartialEq, Clone)]
 enum Operation {
     Push(i32),
+    String(String),
     Plus,
     Minus,
     Equals,
@@ -36,28 +41,60 @@ struct Program {
 }
 
 impl Program {
-    #[allow(unused)]
-    fn new(operations: Vec<Operation>) -> Self {
-        Self {
-            operations,
-            emulation_stack: vec![],
-        }
-    }
-
     fn from_file(file_path: &str) -> Self {
         let mut operations = vec![];
 
-        let mut file = std::fs::File::open(file_path).expect("no such file");
+        let mut file: File = std::fs::File::open(file_path).expect("no such file");
 
-        let code = &mut String::new();
-        let _ = file.read_to_string(code);
+        let mut code = String::new();
+        let _ = file.read_to_string(&mut code);
 
         for line in code.lines() {
-            let line = line.trim();
+            let mut line = line.trim().to_string();
+
+            let mut reading_string = false;
+            let mut escape_next = false;
+            let mut strings: Vec<String> = vec![];
+            let mut accum_string = "".to_owned();
+            for ch in line.chars() {
+                match ch {
+                    '\"' => {
+                        if reading_string {
+                            strings.push(accum_string);
+                            accum_string = "".to_owned();
+                        } 
+                        reading_string = !reading_string;
+                        continue;
+                    },
+                    '\\' => {
+                        escape_next = true;
+                        continue;
+                    }
+                    'n' => {
+                        if escape_next {
+                            accum_string.push('\n');
+                            escape_next = false;
+                            continue;
+                        }
+                    }
+                    _ => {}
+                }
+
+                if reading_string {
+                    accum_string.push(ch);
+                }
+            }
+
+            for string in strings.iter() {
+                line = line.replacen(&format!("\\n"), "\n", 2);
+                line = line.replace(&format!("\"{string}\""), "string");
+            }
+
             let no_comments = line.split("//").next().unwrap();
             let mut tokens = no_comments.split_whitespace().enumerate();
             while let Some((_, token)) = tokens.next() {
                 let op = match token {
+                    "string" => Operation::String(strings.pop().unwrap()),
                     "+" => Operation::Plus,
                     "-" => Operation::Minus,
                     "=" => Operation::Equals,
@@ -129,7 +166,7 @@ impl Program {
                 Operation::End { address } => {
                     // TODO: check for end of stack and throw error if extra `end`
                     let op_id = stack.pop().unwrap();
-                    let cross_op = test_ops[op_id];
+                    let cross_op = test_ops[op_id].clone();
                     if cross_op == (Operation::Do { address: 0 }) {
                         *address = stack.pop().unwrap();
                     }
@@ -281,6 +318,7 @@ impl Program {
                 Operation::Syscall { .. } => {
                     unimplemented!()
                 }
+                Operation::String(_) => unimplemented!(),
             }
         }
     }
@@ -354,33 +392,33 @@ impl Program {
                 }
                 Operation::Equals => {
                     "".to_owned()
-                        + ";; -- = --\n"
-                        + "\tpop rax\n"
-                        + "\tpop rbx\n"
-                        + "\tcmp rax, rbx\n"
-                        + "\tsete al\n"
-                        // + "\tmovzx rax, al\n"
-                        + "\tpush rax\n"
+                                    + ";; -- = --\n"
+                                    + "\tpop rax\n"
+                                    + "\tpop rbx\n"
+                                    + "\tcmp rax, rbx\n"
+                                    + "\tsete al\n"
+                                    // + "\tmovzx rax, al\n"
+                                    + "\tpush rax\n"
                 }
                 Operation::Greater => {
                     "".to_owned()
-                        + ";; -- > --\n"
-                        + "\tpop rbx\n"
-                        + "\tpop rax\n"
-                        + "\tcmp rax, rbx\n"
-                        + "\tsetg al\n"
-                        // + "\tmovzx rax, al\n"
-                        + "\tpush rax\n"
+                                    + ";; -- > --\n"
+                                    + "\tpop rbx\n"
+                                    + "\tpop rax\n"
+                                    + "\tcmp rax, rbx\n"
+                                    + "\tsetg al\n"
+                                    // + "\tmovzx rax, al\n"
+                                    + "\tpush rax\n"
                 }
                 Operation::Lower => {
                     "".to_owned()
-                        + ";; -- < --\n"
-                        + "\tpop rbx\n"
-                        + "\tpop rax\n"
-                        + "\tcmp rax, rbx\n"
-                        + "\tsetl al\n"
-                        // + "\tmovzx rax, al\n"
-                        + "\tpush rax\n"
+                                    + ";; -- < --\n"
+                                    + "\tpop rbx\n"
+                                    + "\tpop rax\n"
+                                    + "\tcmp rax, rbx\n"
+                                    + "\tsetl al\n"
+                                    // + "\tmovzx rax, al\n"
+                                    + "\tpush rax\n"
                 }
                 Operation::BitAnd => {
                     "".to_owned()
@@ -500,6 +538,18 @@ impl Program {
                     syscall_code += "\tsyscall\n";
 
                     syscall_code
+                }
+                Operation::String(string) => {
+                    let mut op = "".to_owned();
+
+                    for (offset, b) in string.as_bytes().iter().enumerate() {
+                        op += &format!("\tmov [mem+{offset}], BYTE {b}\n");
+                    }
+
+                    op += &format!("\tpush {}\n", string.len());
+                    op += "\tpush mem\n";
+
+                    op
                 }
             };
             code.push_str(&operation);
