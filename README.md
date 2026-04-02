@@ -1,15 +1,15 @@
 # About
-`can` is a stack-based programming language written in rust.
+`can` is a stack-based programming language written in Rust.
 It is currently at the earliest stages of its development and basically copies the syntax of Tsoding's Porth. 
 
 # Features
-- arithmetic operations
-- bitwise logic operations
-- dump (print number from the top of the stack)
-- if-else statements 
-- while loops
-- memory addressing
-- syscalls
+- Arithmetic operations
+- Bitwise logic operations
+- Dump (print number from the top of the stack)
+- if-else statements and while-loops
+- Memory addressing
+- Syscalls
+- Macros
 - C-style comments (//)
 - [Turing complete](./examples/rule110.can)
 
@@ -42,6 +42,6 @@ end
 
 # Quick start
 ```
-cargo run build examples/test.can && ./out
-cargo run emulate examples/test.can
+cargo run -- build examples/test.can && ./out
+cargo run -- emulate examples/test.can
 ```
