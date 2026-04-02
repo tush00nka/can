@@ -1,10 +1,20 @@
-macro count_to_ten
-	0
-	while dup 10 < do
-		1 +
-		dup dump
-	end
-	drop
+// first macro here
+macro plus
+	+
 ;
 
-count_to_ten
+// call macro from inside of macro
+macro plus2
+	plus plus
+;
+
+// use the macro consistent of two macro
+1 2 3 plus2 dump
+
+// possible macro for write syscall abstraction
+macro write
+	1 1 syscall3
+;
+
+// string literals put their length on stack 
+"Hello, World!\n" write

@@ -7,7 +7,7 @@ use std::{
 
 mod utils;
 
-#[derive(PartialEq, Clone)]
+#[derive(PartialEq, Clone, Debug)]
 enum Operation {
     Push(u64),
     String(String),
@@ -381,68 +381,68 @@ impl Program {
 
     fn cross_reference(&mut self) {
         let mut stack = vec![];
-        let test_ops = self.operations.clone();
-
-        let mut macro_pool = vec![];
-        let mut accumulating_macro = false;
 
         let mut macros: HashMap<String, Vec<Operation>> = HashMap::new();
+        let mut accumulating_macro = false;
+        let mut macro_pool = vec![];
+        let mut name_buf = "".to_string();
 
-        for i in 0..self.operations.len() {
-            let op = self.operations.get_mut(i).unwrap();
+        let mut opsi = self.operations.clone().into_iter();
+
+        let mut new_ops = vec![];
+
+        while let Some(op) = opsi.next() {
             match op {
-                Operation::DefineMacro { .. } => {
+                Operation::DefineMacro { name, .. } => {
                     accumulating_macro = true;
+                    name_buf = name;
                     macro_pool.clear();
-                    stack.push(i);
                 }
                 Operation::EndMacro => {
-                    let op_id = stack.pop().unwrap();
-                    match self.operations.get_mut(op_id).unwrap() {
-                        Operation::DefineMacro {
-                            name,
-                            operations,
-                        } => {
-                            accumulating_macro = false;
-                            macros.insert(name.clone(), macro_pool.clone());
-                            *operations = macro_pool.clone();
-                        }
-                        _ => {}
-                    }
+                    accumulating_macro = false;
+                    macros.insert(name_buf.to_string(), macro_pool.clone());
                 }
                 _ => {
                     if accumulating_macro {
                         macro_pool.push(op.clone());
+                    } else {
+                        new_ops.push(op.clone());
                     }
                 }
             }
         }
 
-        let mut calls = vec![];
+        self.operations = new_ops;
 
-        for i in 0..self.operations.len() {
-            let op = self.operations.get_mut(i).unwrap();
-            match op {
-                Operation::CallMacro { name } => {
-                    calls.push(name.clone());
+        fn unwrap_macro(
+            name: &str,
+            macros: &mut HashMap<String, Vec<Operation>>,
+        ) -> Vec<Operation> {
+            let ops = macros.get(name).unwrap().clone();
+            ops.iter()
+                .map(|op: &Operation| match op {
+                    Operation::CallMacro { name } => {
+                        return unwrap_macro(name, macros);
+                    }
+                    _ => return vec![op.clone()],
+                })
+                .flatten()
+                .collect()
+        }
+
+        self.operations = self
+            .operations
+            .iter()
+            .map(|op| match op {
+                Operation::CallMacro { name } => unwrap_macro(name, &mut macros),
+                _ => {
+                    vec![op.clone()]
                 }
-                _ => {}
-            }
-        }
+            })
+            .flatten()
+            .collect::<Vec<Operation>>();
 
-        let split_operations = self.operations.split(|op| match op {
-            Operation::CallMacro { .. } => true,
-            _ => false,
-        });
-
-        let mut collected_ops: Vec<Operation> = vec![];
-        let splits_len = split_operations.clone().count();
-        for (i, ops) in split_operations.enumerate() {
-            collected_ops.append(&mut ops.to_vec());
-            if i < splits_len - 1 {
-                collected_ops.append(&mut macros.get_mut(&calls[i]).unwrap());
-            }
-        }
+        let test_ops = self.operations.clone();
 
         for i in 0..self.operations.len() {
             let op = self.operations.get_mut(i).unwrap();
@@ -659,9 +659,9 @@ impl Program {
                     }
                 }
                 Operation::String(_) => unimplemented!(),
-                Operation::CallMacro { .. } => {},
-                Operation::DefineMacro { .. } => {},
-                Operation::EndMacro => {},
+                Operation::CallMacro { .. } => {}
+                Operation::DefineMacro { .. } => {}
+                Operation::EndMacro => {}
             }
         }
     }
