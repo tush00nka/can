@@ -1,0 +1,10 @@
+macro count_to_ten
+	0
+	while dup 10 < do
+		1 +
+		dup dump
+	end
+	drop
+;
+
+count_to_ten

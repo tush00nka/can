@@ -1,12 +1,15 @@
 use core::{iter::Iterator, unimplemented};
 use std::{
+    collections::HashMap,
     fs::File,
     io::{Read, Write},
 };
 
+mod utils;
+
 #[derive(PartialEq, Clone)]
 enum Operation {
-    Push(i32),
+    Push(u64),
     String(String),
     Plus,
     Minus,
@@ -18,26 +21,247 @@ enum Operation {
     BitShiftLeft,
     BitShiftRight,
     Dump,
-    If { address: usize },
-    Else { address: usize },
+    If {
+        address: usize,
+    },
+    Else {
+        address: usize,
+    },
     While,
-    Do { address: usize },
-    End { address: usize },
-    Dup { depth: usize },
+    Do {
+        address: usize,
+    },
+    End {
+        address: usize,
+    },
+    Dup {
+        depth: usize,
+    },
     Swap,
     Over,
     Mem,
     Store,
     Load,
     Drop,
-    Syscall { arg_count: usize },
+    Syscall {
+        arg_count: usize,
+    },
+    DefineMacro {
+        name: String,
+        operations: Vec<Operation>,
+    },
+    EndMacro,
+    CallMacro {
+        name: String,
+    },
+}
+
+impl Operation {
+    pub fn to_assembly(&self, index: usize) -> String {
+        match self {
+            Operation::Push(number) => format!(";; -- {} --\n\tpush {}\n", number, number),
+            Operation::Plus => {
+                "".to_owned()
+                    + ";; -- + --\n"
+                    + "\tpop rax\n"
+                    + "\tpop rbx\n"
+                    + "\tadd rax, rbx\n"
+                    + "\tpush rax\n"
+            }
+            Operation::Minus => {
+                "".to_owned()
+                    + ";; -- - --\n"
+                    + "\tpop rbx\n"
+                    + "\tpop rax\n"
+                    + "\tsub rax, rbx\n"
+                    + "\tpush rax\n"
+            }
+            Operation::Equals => {
+                "".to_owned()
+                        + ";; -- = --\n"
+                        + "\tpop rax\n"
+                        + "\tpop rbx\n"
+                        + "\tcmp rax, rbx\n"
+                        + "\tsete al\n"
+                        // + "\tmovzx rax, al\n"
+                        + "\tpush rax\n"
+            }
+            Operation::Greater => {
+                "".to_owned()
+                        + ";; -- > --\n"
+                        + "\tpop rbx\n"
+                        + "\tpop rax\n"
+                        + "\tcmp rax, rbx\n"
+                        + "\tsetg al\n"
+                        // + "\tmovzx rax, al\n"
+                        + "\tpush rax\n"
+            }
+            Operation::Lower => {
+                "".to_owned()
+                        + ";; -- < --\n"
+                        + "\tpop rbx\n"
+                        + "\tpop rax\n"
+                        + "\tcmp rax, rbx\n"
+                        + "\tsetl al\n"
+                        // + "\tmovzx rax, al\n"
+                        + "\tpush rax\n"
+            }
+            Operation::BitAnd => {
+                "".to_owned()
+                    + ";; -- & --\n"
+                    + "\tpop rbx\n"
+                    + "\tpop rax\n"
+                    + "\nand rax, rbx\n"
+                    + "\tpush rax\n"
+            }
+            Operation::BitOr => {
+                "".to_owned()
+                    + ";; -- | --\n"
+                    + "\tpop rbx\n"
+                    + "\tpop rax\n"
+                    + "\nor rax, rbx\n"
+                    + "\tpush rax\n"
+            }
+            Operation::BitShiftLeft => {
+                "".to_owned()
+                    + ";; -- << --\n"
+                    + "\tpop rcx\n"
+                    + "\tpop rax\n"
+                    + "\nshl rax, cl\n"
+                    + "\tpush rax\n"
+            }
+            Operation::BitShiftRight => {
+                "".to_owned()
+                    + ";; -- >> --\n"
+                    + "\tpop rcx\n"
+                    + "\tpop rax\n"
+                    + "\nshr rax, cl\n"
+                    + "\tpush rax\n"
+            }
+            Operation::Dump => "".to_owned() + "\tpop rdi\n" + "\tcall dump\n",
+            Operation::If { address } => {
+                "".to_owned()
+                    + ";; -- IF -- \n"
+                    + "\tpop rax\n"
+                    + "\ttest rax, rax\n"
+                    + &format!("\tjz label_{address}\n")
+            }
+            Operation::Else { address } => {
+                "".to_owned()
+                    + ";; -- ELSE -- \n"
+                    + &format!("\tjmp label_{address}\n")
+                    + &format!("label_{index}:\n")
+            }
+            Operation::While => {
+                format!(";; -- WHILE -- \nlabel_{index}:\n")
+            }
+            Operation::Do { address } => {
+                "".to_owned()
+                    + ";; -- DO -- \n"
+                    + "\tpop rax\n"
+                    + "\ttest rax, rax\n"
+                    + &format!("\tjz label_{address}\n")
+            }
+            Operation::End { address } => {
+                if *address > 0 {
+                    format!(";; -- END WHILE -- \n\tjmp label_{address}\nlabel_{index}:\n")
+                } else {
+                    format!(";; -- END IF -- \n\tlabel_{index}:\n")
+                }
+            }
+            Operation::EndMacro => "".to_owned(),
+            Operation::Dup { depth } => {
+                if *depth == 1 {
+                    "".to_owned()
+                        + ";; -- DUP --\n"
+                        + "\tpop rax\n"
+                        + "\tpush rax\n"
+                        + "\tpush rax\n"
+                } else if *depth == 2 {
+                    "".to_owned()
+                        + ";; -- DUP 2 --\n"
+                        + "\tpop rax\n"
+                        + "\tpop rbx\n"
+                        + "\tpush rbx\n"
+                        + "\tpush rax\n"
+                        + "\tpush rbx\n"
+                        + "\tpush rax\n"
+                } else {
+                    "".to_owned()
+                }
+            }
+            Operation::Swap => {
+                "".to_owned() + "\tpop rax\n" + "\tpop rbx\n" + "\tpush rax\n" + "\tpush rbx\n"
+            }
+            Operation::Over => {
+                "".to_owned()
+                    + "\tpop rax\n"
+                    + "\tpop rbx\n"
+                    + "\tpush rbx\n"
+                    + "\tpush rax\n"
+                    + "\tpush rbx\n"
+            }
+            Operation::Drop => "".to_owned() + "\tpop rax\n" + "\txor rax, rax\n",
+            Operation::Mem => "".to_owned() + ";; -- MEM --\n" + "\tpush mem\n",
+            Operation::Store => {
+                "".to_owned()
+                    + ";; -- STORE --\n"
+                    + "\tpop rbx\n"
+                    + "\tpop rax\n"
+                    + "\tmov [rax], bl\n"
+            }
+            Operation::Load => {
+                "".to_owned()
+                    + ";; -- LOAD --\n"
+                    + "\tpop rax\n"
+                    + "\txor rbx, rbx\n"
+                    + "\tmov bl, [rax]\n"
+                    + "\tpush rbx\n"
+            }
+            Operation::Syscall { arg_count } => {
+                let mut syscall_code =
+                    "".to_owned() + &format!(";; -- SYSCALL {arg_count} --\n") + "\tpop rax\n"; // syscall number
+
+                let arg_registers = ["rdi", "rsi", "rdx", "r10", "r8", "r9"];
+
+                for i in 0..*arg_count {
+                    syscall_code += &format!("\tpop {}\n", arg_registers[i]);
+                }
+
+                syscall_code += "\tsyscall\n";
+
+                syscall_code
+            }
+            Operation::String(string) => {
+                let mut op = "".to_owned();
+
+                for (offset, b) in string.as_bytes().iter().enumerate() {
+                    op += &format!("\tmov [mem+{offset}], BYTE {b}\n");
+                }
+
+                op += &format!("\tpush {}\n", string.len());
+                op += "\tpush mem\n";
+
+                op
+            }
+            Operation::DefineMacro {
+                name: _,
+                operations: _,
+            } => {
+                "".to_owned()
+                // format!(";; -- A FUNCTION '{name}' HAS BEEN DEFINED HERE --\n")
+            }
+            Operation::CallMacro { .. } => "".to_owned(),
+        }
+    }
 }
 
 const MEM_BUFFER_SIZE: usize = 640_000;
 
 struct Program {
     operations: Vec<Operation>,
-    emulation_stack: Vec<i32>,
+    emulation_stack: Vec<u64>,
+    emulation_mem: [u8; 640_000],
 }
 
 impl Program {
@@ -62,10 +286,10 @@ impl Program {
                         if reading_string {
                             strings.push(accum_string);
                             accum_string = "".to_owned();
-                        } 
+                        }
                         reading_string = !reading_string;
                         continue;
-                    },
+                    }
                     '\\' => {
                         escape_next = true;
                         continue;
@@ -120,11 +344,28 @@ impl Program {
                     "drop" => Operation::Drop,
                     "syscall1" => Operation::Syscall { arg_count: 1 },
                     "syscall3" => Operation::Syscall { arg_count: 3 },
-                    _ => Operation::Push(
-                        token
-                            .parse::<i32>()
-                            .expect(&format!("Unexpected operand '{token}'")),
-                    ),
+                    "macro" => Operation::DefineMacro {
+                        name: tokens
+                            .next()
+                            .expect("Function isn't followed by a name!")
+                            .1
+                            .to_owned(),
+                        operations: vec![],
+                    },
+                    ";" => Operation::EndMacro,
+                    _ => {
+                        if token.starts_with(|c: char| c.is_digit(10)) {
+                            Operation::Push(
+                                token
+                                    .parse::<u64>()
+                                    .expect(&format!("Unexpected operand '{token}'")),
+                            )
+                        } else {
+                            Operation::CallMacro {
+                                name: token.to_owned(),
+                            }
+                        }
+                    }
                 };
 
                 operations.push(op);
@@ -134,12 +375,75 @@ impl Program {
         Self {
             operations,
             emulation_stack: vec![],
+            emulation_mem: [0; 640_000],
         }
     }
 
     fn cross_reference(&mut self) {
         let mut stack = vec![];
         let test_ops = self.operations.clone();
+
+        let mut macro_pool = vec![];
+        let mut accumulating_macro = false;
+
+        let mut macros: HashMap<String, Vec<Operation>> = HashMap::new();
+
+        for i in 0..self.operations.len() {
+            let op = self.operations.get_mut(i).unwrap();
+            match op {
+                Operation::DefineMacro { .. } => {
+                    accumulating_macro = true;
+                    macro_pool.clear();
+                    stack.push(i);
+                }
+                Operation::EndMacro => {
+                    let op_id = stack.pop().unwrap();
+                    match self.operations.get_mut(op_id).unwrap() {
+                        Operation::DefineMacro {
+                            name,
+                            operations,
+                        } => {
+                            accumulating_macro = false;
+                            macros.insert(name.clone(), macro_pool.clone());
+                            *operations = macro_pool.clone();
+                        }
+                        _ => {}
+                    }
+                }
+                _ => {
+                    if accumulating_macro {
+                        macro_pool.push(op.clone());
+                    }
+                }
+            }
+        }
+
+        let mut calls = vec![];
+
+        for i in 0..self.operations.len() {
+            let op = self.operations.get_mut(i).unwrap();
+            match op {
+                Operation::CallMacro { name } => {
+                    calls.push(name.clone());
+                }
+                _ => {}
+            }
+        }
+
+        let split_operations = self.operations.split(|op| match op {
+            Operation::CallMacro { .. } => true,
+            _ => false,
+        });
+
+        let mut collected_ops: Vec<Operation> = vec![];
+        let splits_len = split_operations.clone().count();
+        for (i, ops) in split_operations.enumerate() {
+            collected_ops.append(&mut ops.to_vec());
+            if i < splits_len - 1 {
+                collected_ops.append(&mut macros.get_mut(&calls[i]).unwrap());
+            }
+        }
+
         for i in 0..self.operations.len() {
             let op = self.operations.get_mut(i).unwrap();
             match op {
@@ -213,17 +517,17 @@ impl Program {
                 Operation::Equals => {
                     let a = stack.pop().unwrap();
                     let b = stack.pop().unwrap();
-                    stack.push((a == b) as i32);
+                    stack.push((a == b) as u64);
                 }
                 Operation::Greater => {
                     let b = stack.pop().unwrap();
                     let a = stack.pop().unwrap();
-                    stack.push((a > b) as i32);
+                    stack.push((a > b) as u64);
                 }
                 Operation::Lower => {
                     let b = stack.pop().unwrap();
                     let a = stack.pop().unwrap();
-                    stack.push((a < b) as i32);
+                    stack.push((a < b) as u64);
                 }
                 Operation::BitAnd => {
                     let b = stack.pop().unwrap();
@@ -238,12 +542,14 @@ impl Program {
                 Operation::BitShiftLeft => {
                     let b = stack.pop().unwrap();
                     let a = stack.pop().unwrap();
-                    stack.push(a << b);
+                    let result = if b >= 64 { 0 } else { a << b };
+                    stack.push(result);
                 }
                 Operation::BitShiftRight => {
                     let b = stack.pop().unwrap();
                     let a = stack.pop().unwrap();
-                    stack.push(a >> b);
+                    let result = if b >= 64 { 0 } else { a >> b };
+                    stack.push(result);
                 }
                 Operation::Dump => {
                     println!("{}", stack.pop().unwrap());
@@ -307,18 +613,55 @@ impl Program {
                     stack.pop();
                 }
                 Operation::Mem => {
-                    unimplemented!()
+                    stack.push(self.emulation_mem.as_ptr() as u64);
                 }
                 Operation::Store => {
-                    unimplemented!()
+                    // eprintln!("Store: stack before pop = {:?}", stack);
+                    if stack.len() < 2 {
+                        eprintln!("Store: stack underflow, stack={:?}", stack);
+                        panic!("stack underflow");
+                    }
+
+                    let val = stack.pop().unwrap();
+                    let addr = stack.pop().unwrap() as *mut u8;
+                    if addr as u8 == 0 {
+                        eprintln!("Store with address 0, val={}, stack={:?}", val, stack);
+                        panic!("Null pointer store");
+                    }
+                    let data = unsafe { addr.as_mut().unwrap() };
+                    *data = val as u8;
                 }
                 Operation::Load => {
-                    unimplemented!()
+                    if stack.len() < 1 {
+                        eprintln!("Store: stack underflow, stack={:?}", stack);
+                        panic!("stack underflow");
+                    }
+                    let mem_addr = stack.pop().unwrap() as *const u8;
+                    stack.push(*unsafe { mem_addr.as_ref().unwrap() } as u64);
                 }
-                Operation::Syscall { .. } => {
-                    unimplemented!()
+                Operation::Syscall { arg_count } => {
+                    let syscall_code = stack.pop().unwrap() as u64;
+                    let mut args = vec![];
+
+                    for _ in 0..*arg_count {
+                        let val = stack.pop().unwrap();
+                        args.push(val as u64);
+                    }
+
+                    let (a1, a2, a3) = match args.as_slice() {
+                        &[a1, a2, a3] => (a1, a2, a3),
+                        _ => {
+                            panic!("this should never happen")
+                        }
+                    };
+                    unsafe {
+                        utils::syscall_3(syscall_code, a1, a2, a3);
+                    }
                 }
                 Operation::String(_) => unimplemented!(),
+                Operation::CallMacro { .. } => {},
+                Operation::DefineMacro { .. } => {},
+                Operation::EndMacro => {},
             }
         }
     }
@@ -372,186 +715,7 @@ impl Program {
 
         for i in 0..self.operations.len() {
             let op = self.operations.get(i).unwrap();
-            let operation = match op {
-                Operation::Push(number) => format!(";; -- {} --\n\tpush {}\n", number, number),
-                Operation::Plus => {
-                    "".to_owned()
-                        + ";; -- + --\n"
-                        + "\tpop rax\n"
-                        + "\tpop rbx\n"
-                        + "\tadd rax, rbx\n"
-                        + "\tpush rax\n"
-                }
-                Operation::Minus => {
-                    "".to_owned()
-                        + ";; -- - --\n"
-                        + "\tpop rbx\n"
-                        + "\tpop rax\n"
-                        + "\tsub rax, rbx\n"
-                        + "\tpush rax\n"
-                }
-                Operation::Equals => {
-                    "".to_owned()
-                                    + ";; -- = --\n"
-                                    + "\tpop rax\n"
-                                    + "\tpop rbx\n"
-                                    + "\tcmp rax, rbx\n"
-                                    + "\tsete al\n"
-                                    // + "\tmovzx rax, al\n"
-                                    + "\tpush rax\n"
-                }
-                Operation::Greater => {
-                    "".to_owned()
-                                    + ";; -- > --\n"
-                                    + "\tpop rbx\n"
-                                    + "\tpop rax\n"
-                                    + "\tcmp rax, rbx\n"
-                                    + "\tsetg al\n"
-                                    // + "\tmovzx rax, al\n"
-                                    + "\tpush rax\n"
-                }
-                Operation::Lower => {
-                    "".to_owned()
-                                    + ";; -- < --\n"
-                                    + "\tpop rbx\n"
-                                    + "\tpop rax\n"
-                                    + "\tcmp rax, rbx\n"
-                                    + "\tsetl al\n"
-                                    // + "\tmovzx rax, al\n"
-                                    + "\tpush rax\n"
-                }
-                Operation::BitAnd => {
-                    "".to_owned()
-                        + ";; -- < --\n"
-                        + "\tpop rbx\n"
-                        + "\tpop rax\n"
-                        + "\nand rax, rbx\n"
-                        + "\tpush rax\n"
-                }
-                Operation::BitOr => {
-                    "".to_owned()
-                        + ";; -- < --\n"
-                        + "\tpop rbx\n"
-                        + "\tpop rax\n"
-                        + "\nor rax, rbx\n"
-                        + "\tpush rax\n"
-                }
-                Operation::BitShiftLeft => {
-                    "".to_owned()
-                        + ";; -- < --\n"
-                        + "\tpop rcx\n"
-                        + "\tpop rax\n"
-                        + "\nshl rax, cl\n"
-                        + "\tpush rax\n"
-                }
-                Operation::BitShiftRight => {
-                    "".to_owned()
-                        + ";; -- < --\n"
-                        + "\tpop rcx\n"
-                        + "\tpop rax\n"
-                        + "\nshr rax, cl\n"
-                        + "\tpush rax\n"
-                }
-                Operation::Dump => "".to_owned() + "\tpop rdi\n" + "\tcall dump\n",
-                Operation::If { address } => {
-                    "".to_owned()
-                        + ";; -- IF -- \n"
-                        + "\tpop rax\n"
-                        + "\ttest rax, rax\n"
-                        + &format!("\tjz label_{address}\n")
-                }
-                Operation::Else { address } => {
-                    "".to_owned()
-                        + ";; -- ELSE -- \n"
-                        + &format!("\tjmp label_{address}\n")
-                        + &format!("label_{i}:\n")
-                }
-                Operation::While => {
-                    format!(";; -- WHILE -- \nlabel_{i}:\n")
-                }
-                Operation::Do { address } => {
-                    "".to_owned()
-                        + ";; -- DO -- \n"
-                        + "\tpop rax\n"
-                        + "\ttest rax, rax\n"
-                        + &format!("\tjz label_{address}\n")
-                }
-                Operation::End { address } => {
-                    if *address > 0 {
-                        format!(";; -- END WHILE -- \n\tjmp label_{address}\nlabel_{i}:\n")
-                    } else {
-                        format!(";; -- END IF -- \n\tlabel_{i}:\n")
-                    }
-                }
-                Operation::Dup { depth } => {
-                    if *depth == 1 {
-                        "".to_owned() + "\tpop rax\n" + "\tpush rax\n" + "\tpush rax\n"
-                    } else if *depth == 2 {
-                        "".to_owned()
-                            + "\tpop rax\n"
-                            + "\tpop rbx\n"
-                            + "\tpush rbx\n"
-                            + "\tpush rax\n"
-                            + "\tpush rbx\n"
-                            + "\tpush rax\n"
-                    } else {
-                        "".to_owned()
-                    }
-                }
-                Operation::Swap => {
-                    "".to_owned() + "\tpop rax\n" + "\tpop rbx\n" + "\tpush rax\n" + "\tpush rbx\n"
-                }
-                Operation::Over => {
-                    "".to_owned()
-                        + "\tpop rax\n"
-                        + "\tpop rbx\n"
-                        + "\tpush rbx\n"
-                        + "\tpush rax\n"
-                        + "\tpush rbx\n"
-                }
-                Operation::Drop => "".to_owned() + "\tpop rax\n" + "\txor rax, rax\n",
-                Operation::Mem => "".to_owned() + ";; -- MEM --\n" + "\tpush mem\n",
-                Operation::Store => {
-                    "".to_owned()
-                        + ";; -- STORE --\n"
-                        + "\tpop rbx\n"
-                        + "\tpop rax\n"
-                        + "\tmov [rax], bl\n"
-                }
-                Operation::Load => {
-                    "".to_owned()
-                        + ";; -- LOAD --\n"
-                        + "\tpop rax\n"
-                        + "\txor rbx, rbx\n"
-                        + "\tmov bl, [rax]\n"
-                        + "\tpush rbx\n"
-                }
-                Operation::Syscall { arg_count } => {
-                    let mut syscall_code = "".to_owned() + ";; -- SYSCALL 3 --\n" + "\tpop rax\n"; // syscall number
-
-                    let arg_registers = ["rdi", "rsi", "rdx", "r10", "r8", "r9"];
-
-                    for i in 0..*arg_count {
-                        syscall_code += &format!("\tpop {}\n", arg_registers[i]);
-                    }
-
-                    syscall_code += "\tsyscall\n";
-
-                    syscall_code
-                }
-                Operation::String(string) => {
-                    let mut op = "".to_owned();
-
-                    for (offset, b) in string.as_bytes().iter().enumerate() {
-                        op += &format!("\tmov [mem+{offset}], BYTE {b}\n");
-                    }
-
-                    op += &format!("\tpush {}\n", string.len());
-                    op += "\tpush mem\n";
-
-                    op
-                }
-            };
+            let operation = op.to_assembly(i);
             code.push_str(&operation);
         }
 
