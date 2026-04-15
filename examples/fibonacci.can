@@ -1,12 +1,17 @@
-mem 1 + 0 . // first
-mem 2 + 1 . // second
-mem 3 + 0 . // temp
+macro BYTE 8 ;
 
-// breaks after number 255 because we're using bytes :)
-10 0 while 2dup > do
+macro first mem ;
+macro second mem BYTE + ;
+macro temp mem BYTE BYTE + + ;
+
+first  0 !64 // first
+second 1 !64 // second
+temp   0 !64 // temp
+
+20 0 while 2dup > do
     1 +
-    mem 3 + mem 1 + , mem 2 + , + . // sum two numbers and put result in temp value
-    mem 1 + mem 2 + , . // put second number in place of first
-    mem 2 + mem 3 + , . // put temp value in place of second
-    mem 3 + , dump // print
+    temp first @64 second @64 + !64 // sum two numbers and put result in temp value
+    first second @64 !64 // put second number in place of first
+    second temp @64 !64 // put temp value in place of second
+    temp @64 dump // print
 end

@@ -13,6 +13,7 @@ enum Operation {
     String(String),
     Plus,
     Minus,
+    NotEqual,
     Equals,
     Greater,
     Lower,
@@ -21,39 +22,25 @@ enum Operation {
     BitShiftLeft,
     BitShiftRight,
     Dump,
-    If {
-        address: usize,
-    },
-    Else {
-        address: usize,
-    },
+    If { address: usize },
+    Else { address: usize },
     While,
-    Do {
-        address: usize,
-    },
-    End {
-        address: usize,
-    },
-    Dup {
-        depth: usize,
-    },
+    Do { address: usize },
+    End { address: usize },
+    Dup { depth: usize },
     Swap,
     Over,
+    Rot,
     Mem,
     Store,
     Load,
+    Store64,
+    Load64,
     Drop,
-    Syscall {
-        arg_count: usize,
-    },
-    DefineMacro {
-        name: String,
-        operations: Vec<Operation>,
-    },
+    Syscall { arg_count: usize },
+    DefineMacro { name: String },
     EndMacro,
-    CallMacro {
-        name: String,
-    },
+    CallMacro { name: String },
 }
 
 impl Operation {
@@ -78,13 +65,22 @@ impl Operation {
             }
             Operation::Equals => {
                 "".to_owned()
-                        + ";; -- = --\n"
-                        + "\tpop rax\n"
-                        + "\tpop rbx\n"
-                        + "\tcmp rax, rbx\n"
-                        + "\tsete al\n"
-                        // + "\tmovzx rax, al\n"
-                        + "\tpush rax\n"
+                    + ";; -- = --\n"
+                    + "\tpop rax\n"
+                    + "\tpop rbx\n"
+                    + "\tcmp rax, rbx\n"
+                    + "\tsete al\n"
+                    // + "\tmovzx rax, al\n"
+                    + "\tpush rax\n"
+            }
+            Operation::NotEqual => {
+                "".to_owned()
+                    + ";; -- = --\n"
+                    + "\tpop rax\n"
+                    + "\tpop rbx\n"
+                    + "\tcmp rax, rbx\n"
+                    + "\tsetne al\n"
+                    + "\tpush rax\n"
             }
             Operation::Greater => {
                 "".to_owned()
@@ -201,6 +197,15 @@ impl Operation {
                     + "\tpush rax\n"
                     + "\tpush rbx\n"
             }
+            Operation::Rot => {
+                "".to_owned()
+                    + "\tpop rax\n" 
+                    + "\tpop rbx\n" 
+                    + "\tpop rdi\n"  
+                    + "\tpush rbx\n" 
+                    + "\tpush rax\n" 
+                    + "\tpush rdi\n" 
+            }
             Operation::Drop => "".to_owned() + "\tpop rax\n" + "\txor rax, rax\n",
             Operation::Mem => "".to_owned() + ";; -- MEM --\n" + "\tpush mem\n",
             Operation::Store => {
@@ -216,6 +221,21 @@ impl Operation {
                     + "\tpop rax\n"
                     + "\txor rbx, rbx\n"
                     + "\tmov bl, [rax]\n"
+                    + "\tpush rbx\n"
+            }
+            Operation::Store64 => {
+                "".to_owned()
+                    + ";; -- STORE --\n"
+                    + "\tpop rbx\n"
+                    + "\tpop rax\n"
+                    + "\tmov [rax], rbx\n"
+            }
+            Operation::Load64 => {
+                "".to_owned()
+                    + ";; -- LOAD --\n"
+                    + "\tpop rax\n"
+                    + "\txor rbx, rbx\n"
+                    + "\tmov rbx, [rax]\n"
                     + "\tpush rbx\n"
             }
             Operation::Syscall { arg_count } => {
@@ -244,10 +264,7 @@ impl Operation {
 
                 op
             }
-            Operation::DefineMacro {
-                name: _,
-                operations: _,
-            } => {
+            Operation::DefineMacro { .. } => {
                 "".to_owned()
                 // format!(";; -- A FUNCTION '{name}' HAS BEEN DEFINED HERE --\n")
             }
@@ -322,6 +339,7 @@ impl Program {
                     "+" => Operation::Plus,
                     "-" => Operation::Minus,
                     "=" => Operation::Equals,
+                    "!=" => Operation::NotEqual,
                     ">" => Operation::Greater,
                     "<" => Operation::Lower,
                     "&" => Operation::BitAnd,
@@ -329,6 +347,7 @@ impl Program {
                     "<<" => Operation::BitShiftLeft,
                     ">>" => Operation::BitShiftRight,
                     "dump" => Operation::Dump,
+                    "." => Operation::Dump,
                     "if" => Operation::If { address: 0 },
                     "else" => Operation::Else { address: 0 },
                     "while" => Operation::While,
@@ -338,19 +357,22 @@ impl Program {
                     "2dup" => Operation::Dup { depth: 2 },
                     "swap" => Operation::Swap,
                     "over" => Operation::Over,
+                    "rot" => Operation::Rot,
                     "mem" => Operation::Mem,
-                    "." => Operation::Store,
-                    "," => Operation::Load,
+                    "!" => Operation::Store,
+                    "@" => Operation::Load,
+                    "!64" => Operation::Store64,
+                    "@64" => Operation::Load64,
                     "drop" => Operation::Drop,
                     "syscall1" => Operation::Syscall { arg_count: 1 },
+                    "syscall2" => Operation::Syscall { arg_count: 2 },
                     "syscall3" => Operation::Syscall { arg_count: 3 },
                     "macro" => Operation::DefineMacro {
                         name: tokens
                             .next()
-                            .expect("Function isn't followed by a name!")
+                            .expect("Macro isn't followed by a name!")
                             .1
                             .to_owned(),
-                        operations: vec![],
                     },
                     ";" => Operation::EndMacro,
                     _ => {
@@ -519,6 +541,11 @@ impl Program {
                     let b = stack.pop().unwrap();
                     stack.push((a == b) as u64);
                 }
+                Operation::NotEqual => {
+                    let a = stack.pop().unwrap();
+                    let b = stack.pop().unwrap();
+                    stack.push((a != b) as u64);
+                }
                 Operation::Greater => {
                     let b = stack.pop().unwrap();
                     let a = stack.pop().unwrap();
@@ -609,6 +636,16 @@ impl Program {
                         stack.push(over);
                     }
                 }
+                Operation::Rot => {
+                    if stack.len() > 2 {
+                        let top = stack.pop().unwrap();
+                        let middle = stack.pop().unwrap();
+                        let bottom = stack.pop().unwrap();
+                        stack.push(middle);
+                        stack.push(top);
+                        stack.push(bottom);
+                    }
+                }
                 Operation::Drop => {
                     stack.pop();
                 }
@@ -639,6 +676,8 @@ impl Program {
                     let mem_addr = stack.pop().unwrap() as *const u8;
                     stack.push(*unsafe { mem_addr.as_ref().unwrap() } as u64);
                 }
+                Operation::Store64 => unimplemented!(),
+                Operation::Load64 => unimplemented!(),
                 Operation::Syscall { arg_count } => {
                     let syscall_code = stack.pop().unwrap() as u64;
                     let mut args = vec![];

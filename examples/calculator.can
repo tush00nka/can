@@ -1,0 +1,125 @@
+macro write 1 1 syscall3 ;
+
+// ptr -> uint
+macro strlen
+	0 swap
+	while dup @ 0 != do
+		1 + swap
+		1 + swap
+	end
+	drop
+;
+
+macro CHAR_ZERO 48 ;
+macro CHAR_NINE 57 ;
+
+macro CHAR_MUL 42 ;
+macro CHAR_PLUS 43 ;
+macro CHAR_MINUS 45 ;
+macro CHAR_DOT 46 ;
+
+// uint uint -> uint
+macro *   
+	over swap 
+	while dup 1 > do
+		rot rot dup rot + swap rot
+		1 -
+	end
+	drop drop
+;
+
+macro BYTE 8 ;
+macro temp mem ;
+macro buf temp BYTE + ;
+macro size buf BYTE 256 * + ;
+macro items size BYTE + ;
+
+size 0 !64
+
+// uint -> ()
+macro push
+	size @64 BYTE * items +
+	swap !64
+
+	// increment the size
+	size @64 1 +
+	size swap !64
+;
+
+// () -> uint
+macro pop
+	size @64 0 = if
+		0
+	else 
+		size @64 1 -
+		size swap !64
+		size @64 BYTE * items + @64
+	end
+;
+
+// index: uint -> elem: uint  
+macro peek
+	BYTE *
+	items + @64
+;
+
+// () -> ()
+macro print_array
+	0
+	while dup size @64 < do
+		dup peek dump
+		1 +
+	end
+	drop
+;
+
+// a n -> a**n
+macro pow
+	dup 0 = if 
+		drop drop 1
+	else
+		over swap 
+		while dup 1 > do
+			rot rot dup rot * swap rot
+			1 -
+		end
+		drop drop
+	end
+;
+
+// ptr -> uint
+macro str_to_uint
+	temp 0 !64
+	dup strlen
+	while dup 0 > do
+		swap
+		dup @ CHAR_ZERO - 
+		temp @64 10 * + temp swap !64
+		1 +
+		swap
+		1 -
+	end
+	drop drop
+
+	temp @64
+;
+
+// drop the first arg which is the name of the program 
+swap drop
+1 -
+
+while dup 0 > do
+	swap dup @ CHAR_ZERO 1 - > if
+		str_to_uint push
+	else dup @ CHAR_PLUS = if
+		pop pop + push
+		drop
+	else dup @ CHAR_MINUS = if
+		pop pop swap - push
+		drop
+	else dup @ CHAR_DOT = if
+		pop .
+		drop
+	end end end end
+	1 -
+end
