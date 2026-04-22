@@ -1,6 +1,8 @@
 use std::arch::asm;
 
-use crate::Operation;
+use operation::Operation;
+
+use crate::operation;
 
 // taken from: https://phip1611.de/blog/direct-systemcalls-to-linux-from-rust-code-x86_64/
 pub unsafe fn syscall_3(num: u64, arg1: u64, arg2: u64, arg3: u64) -> i64 { unsafe {
