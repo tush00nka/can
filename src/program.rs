@@ -1,4 +1,9 @@
-use std::{collections::HashMap, fs::File, io::{Read, Write}};
+use std::{
+    collections::HashMap,
+    fs::File,
+    io::{Read, Write},
+    process::exit,
+};
 
 use crate::operation::Operation;
 
@@ -17,6 +22,38 @@ impl Program {
 
         let mut code = String::new();
         let _ = file.read_to_string(&mut code);
+
+        let mut includes = vec![];
+
+        for line in code.lines() {
+            if line.starts_with("include") {
+                let mut parts = line.split_whitespace();
+                parts.next();
+                let include_path = parts
+                    .next()
+                    .expect("no include path provided")
+                    .trim_matches('\"');
+                let mut file = std::fs::File::open(include_path).expect("invalid include path");
+                let mut code = String::new();
+                let _ = file.read_to_string(&mut code);
+                includes.push(code);
+            }
+        }
+
+        let binding = code.clone();
+        let lines: Vec<&str> = binding
+            .lines()
+            .into_iter()
+            .filter(|&line| !line.starts_with("include"))
+            .collect();
+
+        code = "".to_owned();
+        for include in includes {
+            code += &include;
+        }
+        for line in lines {
+            code += &(line.to_owned() + "\n");
+        }
 
         for line in code.lines() {
             let mut line = line.trim().to_string();
@@ -66,7 +103,10 @@ impl Program {
                     "string" => Operation::String(strings.pop().unwrap()),
                     "+" => Operation::Plus { depth: 1 },
                     "-" => Operation::Minus,
+                    "/" => Operation::Div,
+                    "%" => Operation::Mod,
                     "=" => Operation::Equals,
+                    "not" => Operation::Not,
                     "!=" => Operation::NotEqual,
                     ">" => Operation::Greater,
                     "<" => Operation::Lower,
@@ -74,8 +114,6 @@ impl Program {
                     "|" => Operation::BitOr,
                     "<<" => Operation::BitShiftLeft,
                     ">>" => Operation::BitShiftRight,
-                    "dump" => Operation::Dump,
-                    "." => Operation::Dump,
                     "if" => Operation::If { address: 0 },
                     "else" => Operation::Else { address: 0 },
                     "while" => Operation::While,
@@ -152,6 +190,11 @@ impl Program {
                     macro_pool.clear();
                 }
                 Operation::EndMacro => {
+                    if macros.contains_key(&name_buf) {
+                        // TODO: better error message with line and col
+                        println!("ERROR: Macro redefinition: `{}`", name_buf);
+                        exit(1);
+                    }
                     accumulating_macro = false;
                     macros.insert(name_buf.to_string(), macro_pool.clone());
                 }
@@ -285,10 +328,24 @@ impl Program {
                     let a = stack.pop().unwrap() - 1;
                     stack.push(a);
                 }
+                Operation::Div => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(a / b);
+                }
+                Operation::Mod => {
+                    let b = stack.pop().unwrap();
+                    let a = stack.pop().unwrap();
+                    stack.push(a % b);
+                }
                 Operation::Equals => {
                     let a = stack.pop().unwrap();
                     let b = stack.pop().unwrap();
                     stack.push((a == b) as u64);
+                }
+                Operation::Not => {
+                    let a = stack.pop().unwrap();
+                    stack.push(!a);
                 }
                 Operation::NotEqual => {
                     let a = stack.pop().unwrap();
@@ -326,9 +383,6 @@ impl Program {
                     let a = stack.pop().unwrap();
                     let result = if b >= 64 { 0 } else { a >> b };
                     stack.push(result);
-                }
-                Operation::Dump => {
-                    println!("{}", stack.pop().unwrap());
                 }
                 Operation::If { address } => {
                     // true if not 0,
@@ -461,46 +515,6 @@ impl Program {
 
         let mut code = "global _start\nsection .text\n".to_owned();
 
-        let dump = [
-            "dump:\n",
-            "    mov     r9, -3689348814741910323\n",
-            "    sub     rsp, 40\n",
-            "    mov     BYTE [rsp+31], 10\n",
-            "    lea     rcx, [rsp+30]\n",
-            ".L2:\n",
-            "    mov     rax, rdi\n",
-            "    lea     r8, [rsp+32]\n",
-            "    mul     r9\n",
-            "    mov     rax, rdi\n",
-            "    sub     r8, rcx\n",
-            "    shr     rdx, 3\n",
-            "    lea     rsi, [rdx+rdx*4]\n",
-            "    add     rsi, rsi\n",
-            "    sub     rax, rsi\n",
-            "    add     eax, 48\n",
-            "    mov     BYTE [rcx], al\n",
-            "    mov     rax, rdi\n",
-            "    mov     rdi, rdx\n",
-            "    mov     rdx, rcx\n",
-            "    sub     rcx, 1\n",
-            "    cmp     rax, 9\n",
-            "    ja      .L2\n",
-            "    lea     rax, [rsp+32]\n",
-            "    mov     edi, 1\n",
-            "    sub     rdx, rax\n",
-            "    xor     eax, eax\n",
-            "    lea     rsi, [rsp+32+rdx]\n",
-            "    mov     rdx, r8\n",
-            "    mov     rax, 1\n",
-            "    syscall\n",
-            "    add     rsp, 40\n",
-            "    ret\n",
-        ];
-
-        for line in dump {
-            code.push_str(line);
-        }
-
         code.push_str("_start:\n");
 
         for i in 0..self.operations.len() {
@@ -511,7 +525,10 @@ impl Program {
 
         code.push_str("\tmov rax, 60\n\tmov rdi, 0\n\tsyscall\n\n");
         // TODO: remove hardcoded buffer size
-        code.push_str(&format!("section .bss\nmem resb {}\n", crate::MEM_BUFFER_SIZE));
+        code.push_str(&format!(
+            "section .bss\nmem resb {}\n",
+            crate::MEM_BUFFER_SIZE
+        ));
 
         let mut file = std::fs::File::create("./out.asm").expect("Failed to create .asm file");
         file.write_all(code.as_bytes())

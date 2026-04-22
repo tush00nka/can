@@ -6,6 +6,9 @@ pub enum Operation {
     Inc,
     Minus,
     Dec,
+	Div,
+	Mod,
+	Not,
     NotEqual,
     Equals,
     Greater,
@@ -14,7 +17,6 @@ pub enum Operation {
     BitAnd,
     BitShiftLeft,
     BitShiftRight,
-    Dump,
     If { address: usize },
     Else { address: usize },
     While,
@@ -65,6 +67,24 @@ impl Operation {
             Operation::Dec => {
                 "".to_owned() + ";; -- DEC --\n" + "\tpop rax\n" + "\tdec rax\n" + "\tpush rax\n"
             }
+			Operation::Div => {
+				"".to_owned()
+					+ ";; -- / --\n"
+					+ "\tpop rbx\n"
+					+ "\tpop rax\n"
+					+ "\txor rdx, rdx\n"
+					+ "\tdiv rbx\n"
+					+ "\tpush rax\n"
+			}
+			Operation::Mod => {
+				"".to_owned()
+					+ ";; -- / --\n"
+					+ "\tpop rbx\n"
+					+ "\tpop rax\n"
+					+ "\txor rdx, rdx\n"
+					+ "\tdiv rbx\n"
+					+ "\tpush rdx\n" // push remainder
+			}
             Operation::Equals => {
                 "".to_owned()
                     + ";; -- = --\n"
@@ -75,6 +95,13 @@ impl Operation {
                     // + "\tmovzx rax, al\n"
                     + "\tpush rax\n"
             }
+			Operation::Not => {
+				"".to_owned()
+					+ ";; -- NOT --\n"
+					+ "\tpop rax\n"
+					+ "\tneg al\n"
+					+ "\tpush rax\n"
+			}
             Operation::NotEqual => {
                 "".to_owned()
                     + ";; -- = --\n"
@@ -136,7 +163,7 @@ impl Operation {
                     + "\nshr rax, cl\n"
                     + "\tpush rax\n"
             }
-            Operation::Dump => "".to_owned() + "\tpop rdi\n" + "\tcall dump\n",
+            // Operation::Dump => "".to_owned() + "\tpop rdi\n" + "\tcall dump\n",
             Operation::If { address } => {
                 "".to_owned()
                     + ";; -- IF -- \n"

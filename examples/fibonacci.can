@@ -1,8 +1,13 @@
+include "./std/std.can"
+
+// include offset (hack as we don't have proper memory allocation)
+macro offset mem 64 + ;
+
 macro BYTE 8 ;
 
-macro first mem ;
-macro second mem BYTE + ;
-macro temp mem BYTE BYTE + + ;
+macro first offset ;
+macro second offset BYTE + ;
+macro temp offset BYTE BYTE + + ;
 
 first  0 !64 // first
 second 1 !64 // second

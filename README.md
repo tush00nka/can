@@ -16,6 +16,8 @@ It is currently at the earliest stages of its development and basically copies t
 # Basic program
 While loop that prints numbers 1 to 10
 ```
+include "./std/std.can" // for dump
+
 10 0 while 2dup > do 
     1 +
     dup dump
@@ -26,11 +28,16 @@ end
 ```
 // prints first 10 numbers of Fibonacci sequence
 
+include "./std/std.can"
+
+// include offset (hack as we don't have proper memory allocation)
+macro offset mem 64 + ;
+
 macro BYTE 8 ;
 
-macro first mem ;
-macro second mem BYTE + ;
-macro temp mem BYTE BYTE + + ;
+macro first offset ;
+macro second offset BYTE + ;
+macro temp offset BYTE BYTE + + ;
 
 first  0 !64 // first
 second 1 !64 // second
@@ -39,9 +46,9 @@ temp   0 !64 // temp
 20 0 while 2dup > do
     1 +
     temp first @64 second @64 + !64 // sum two numbers and put result in temp value
-    first second @64 !64            // put second number in place of first
-    second temp @64 !64             // put temp value in place of second
-    temp @64 dump                   // print
+    first second @64 !64 // put second number in place of first
+    second temp @64 !64 // put temp value in place of second
+    temp @64 dump // print
 end
 ```
 

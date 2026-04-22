@@ -1,3 +1,5 @@
+include "std/std.can"
+
 10 0 while 2dup > do 
     1 +
     dup dump

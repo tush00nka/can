@@ -1,0 +1,60 @@
+macro STDOUT 1 ;
+macro WRITE 1 ;
+
+macro cursor mem 21 + ;
+macro cbuf mem 22 + ;
+
+macro putc // char -> ()
+	cbuf swap !
+	1 cbuf STDOUT WRITE syscall3
+;
+
+macro CHAR_ZERO 48 ;
+
+macro putd // uint -> () 
+	cursor 0 !64
+	dup 0 = if
+		CHAR_ZERO mem cursor @64 + swap !
+		cursor dup @64 1 + !64
+		drop
+	else
+		while dup 0 > do
+			dup 10 %
+			CHAR_ZERO + 
+			
+			mem cursor @64 + swap !
+			cursor dup @64 1 + !64
+
+			10 /
+		end 
+		drop
+	end
+
+	cursor @64
+	1 + // that's a hack as we don't have negative numbers :(
+	while dup 0 > do
+		dup mem + 1 - @ putc
+		1 -
+	end
+	drop
+;
+
+macro dump // uint -> ()
+	putd 10 putc
+;
+
+macro . // uint -> ()
+	dump
+;
+
+
+
+// ptr -> uint
+macro strlen
+	0 swap
+	while dup @ 0 != do
+		1 + swap
+		1 + swap
+	end
+	drop
+;
