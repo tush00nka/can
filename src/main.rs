@@ -5,14 +5,18 @@ use std::{
     io::{Read, Write},
 };
 
+use crate::utils::fold_optimizations;
+
 mod utils;
 
 #[derive(PartialEq, Clone, Debug)]
 enum Operation {
     Push(u64),
     String(String),
-    Plus,
+    Plus { depth: usize },
+    Inc,
     Minus,
+    Dec,
     NotEqual,
     Equals,
     Greater,
@@ -47,13 +51,17 @@ impl Operation {
     pub fn to_assembly(&self, index: usize) -> String {
         match self {
             Operation::Push(number) => format!(";; -- {} --\n\tpush {}\n", number, number),
-            Operation::Plus => {
-                "".to_owned()
-                    + ";; -- + --\n"
-                    + "\tpop rax\n"
-                    + "\tpop rbx\n"
-                    + "\tadd rax, rbx\n"
-                    + "\tpush rax\n"
+            Operation::Plus { depth } => {
+                let mut op = ";; -- + --\n".to_owned() + "\tpop rax\n";
+                for _ in 0..*depth {
+                    op += "\tpop rbx\n\tadd rax, rbx\n"
+                }
+                op += "\tpush rax\n";
+
+                op
+            }
+            Operation::Inc => {
+                "".to_owned() + ";; -- INC --\n" + "\tpop rax\n" + "\tinc rax\n" + "\tpush rax\n"
             }
             Operation::Minus => {
                 "".to_owned()
@@ -62,6 +70,9 @@ impl Operation {
                     + "\tpop rax\n"
                     + "\tsub rax, rbx\n"
                     + "\tpush rax\n"
+            }
+            Operation::Dec => {
+                "".to_owned() + ";; -- DEC --\n" + "\tpop rax\n" + "\tdec rax\n" + "\tpush rax\n"
             }
             Operation::Equals => {
                 "".to_owned()
@@ -187,10 +198,14 @@ impl Operation {
                 }
             }
             Operation::Swap => {
-                "".to_owned() + "\tpop rax\n" + "\tpop rbx\n" + "\tpush rax\n" + "\tpush rbx\n"
+                ";; -- SWAP --\n".to_owned()
+                    + "\tpop rax\n"
+                    + "\tpop rbx\n"
+                    + "\tpush rax\n"
+                    + "\tpush rbx\n"
             }
             Operation::Over => {
-                "".to_owned()
+                ";; -- OVER --\n".to_owned()
                     + "\tpop rax\n"
                     + "\tpop rbx\n"
                     + "\tpush rbx\n"
@@ -198,13 +213,13 @@ impl Operation {
                     + "\tpush rbx\n"
             }
             Operation::Rot => {
-                "".to_owned()
-                    + "\tpop rax\n" 
-                    + "\tpop rbx\n" 
-                    + "\tpop rdi\n"  
-                    + "\tpush rbx\n" 
-                    + "\tpush rax\n" 
-                    + "\tpush rdi\n" 
+                ";; -- ROT --\n".to_owned()
+                    + "\tpop rax\n"
+                    + "\tpop rbx\n"
+                    + "\tpop rdi\n"
+                    + "\tpush rbx\n"
+                    + "\tpush rax\n"
+                    + "\tpush rdi\n"
             }
             Operation::Drop => "".to_owned() + "\tpop rax\n" + "\txor rax, rax\n",
             Operation::Mem => "".to_owned() + ";; -- MEM --\n" + "\tpush mem\n",
@@ -279,10 +294,11 @@ struct Program {
     operations: Vec<Operation>,
     emulation_stack: Vec<u64>,
     emulation_mem: [u8; 640_000],
+    opt_level: usize,
 }
 
 impl Program {
-    fn from_file(file_path: &str) -> Self {
+    fn from_file(file_path: &str, opt_level: usize) -> Self {
         let mut operations = vec![];
 
         let mut file: File = std::fs::File::open(file_path).expect("no such file");
@@ -336,7 +352,7 @@ impl Program {
             while let Some((_, token)) = tokens.next() {
                 let op = match token {
                     "string" => Operation::String(strings.pop().unwrap()),
-                    "+" => Operation::Plus,
+                    "+" => Operation::Plus { depth: 1 },
                     "-" => Operation::Minus,
                     "=" => Operation::Equals,
                     "!=" => Operation::NotEqual,
@@ -398,6 +414,7 @@ impl Program {
             operations,
             emulation_stack: vec![],
             emulation_mem: [0; 640_000],
+            opt_level,
         }
     }
 
@@ -452,6 +469,7 @@ impl Program {
                 .collect()
         }
 
+        // unwrap all macros recursively
         self.operations = self
             .operations
             .iter()
@@ -464,8 +482,13 @@ impl Program {
             .flatten()
             .collect::<Vec<Operation>>();
 
-        let test_ops = self.operations.clone();
+        // fold all arithmetics for basic optimizations
+        if self.opt_level > 0 {
+            self.operations = fold_optimizations(self.operations.clone());
+        }
 
+        // actual cross-referencing
+        let test_ops = self.operations.clone();
         for i in 0..self.operations.len() {
             let op = self.operations.get_mut(i).unwrap();
             match op {
@@ -526,15 +549,27 @@ impl Program {
                 Operation::Push(number) => {
                     stack.push(*number);
                 }
-                Operation::Plus => {
+                Operation::Plus { depth } => {
                     let a = stack.pop().unwrap();
-                    let b = stack.pop().unwrap();
-                    stack.push(a + b);
+                    // let b = stack.pop().unwrap();
+                    let mut acc = a;
+                    for _ in 0..*depth {
+                        acc += stack.pop().unwrap();
+                    }
+                    stack.push(acc);
+                }
+                Operation::Inc => {
+                    let a = stack.pop().unwrap() + 1;
+                    stack.push(a);
                 }
                 Operation::Minus => {
                     let b = stack.pop().unwrap();
                     let a = stack.pop().unwrap();
                     stack.push(a - b);
+                }
+                Operation::Dec => {
+                    let a = stack.pop().unwrap() - 1;
+                    stack.push(a);
                 }
                 Operation::Equals => {
                     let a = stack.pop().unwrap();
@@ -783,17 +818,6 @@ fn usage() {
 }
 
 fn main() {
-    // let mut program = Program::new(vec![
-    //     Operation::Push(34),
-    //     Operation::Push(35),
-    //     Operation::Plus,
-    //     Operation::Dump,
-    //     Operation::Push(500),
-    //     Operation::Push(80),
-    //     Operation::Minus,
-    //     Operation::Dump,
-    // ]);
-
     let mut args = std::env::args().enumerate();
     let (_, _program_name) = args.next().unwrap();
     let Some((_, mode)) = args.next() else {
@@ -807,7 +831,8 @@ fn main() {
         return;
     };
 
-    let mut program = Program::from_file(&file_path);
+    // TODO: make proper cli args parsing and optimization level flag (-O)
+    let mut program = Program::from_file(&file_path, 1); // hard-code the optimization level for now
 
     match mode.as_str() {
         "build" => program.compile(),
